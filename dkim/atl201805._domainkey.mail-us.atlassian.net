@@ -1,0 +1,2 @@
+wildcard-placeholder
+v=spf1 include:_spf.atlassian.net include:mail-us.atlassian.net include:mail-eu.atlassian.net -all

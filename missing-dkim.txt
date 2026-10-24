@@ -1,0 +1,7 @@
+20120113._domainkey.googlemail.com
+20130820._domainkey.1e100.net
+20140924._domainkey.afd-bielefeld.de
+20140924._domainkey.afd-gt.net
+20140924._domainkey.afd-kvmettmann.de
+domk._domainkey.afd-ennepetal.de
+kas202111221014._domainkey.afd-fraktion-rhein-erft.de
