@@ -2,7 +2,9 @@ use std::path::PathBuf;
 
 #[derive(Debug, clap::Parser)]
 pub struct Args {
-    #[clap(subcommand)]
+    #[arg(short, long, global = true)]
+    pub json: bool,
+    #[command(subcommand)]
     pub subcommand: Subcommand,
 }
 
@@ -10,6 +12,8 @@ pub struct Args {
 pub enum Subcommand {
     /// List emails
     Ls(Ls),
+    /// Verify DKIM signatures
+    Verify(Verify),
     /// Populate local DKIM public key cache
     FetchDkim { file: PathBuf },
 }
@@ -35,4 +39,9 @@ impl Ls {
     pub fn inspect(&self) -> bool {
         !self.from && !self.to && !self.id && !self.subject && !self.dkim
     }
+}
+
+#[derive(Debug, Clone, clap::Parser)]
+pub struct Verify {
+    pub file: PathBuf,
 }

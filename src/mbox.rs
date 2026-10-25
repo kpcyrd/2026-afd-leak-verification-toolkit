@@ -1,21 +1,33 @@
+use crate::dkim::Sig;
 use crate::errors::*;
 use mail_parser::mailbox::mbox::MessageIterator;
 use mail_parser::{Address, Header, HeaderName, MessageParser};
+use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::BufReader;
 use viadkim::signature::DkimSignature;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Email {
     pub from: Vec<String>,
     pub to: Vec<String>,
     pub subject: Option<String>,
     pub message_ids: Vec<String>,
-    pub dkim_signature: Option<DkimSignature>,
-    pub x_google_dkim_signature: Option<DkimSignature>,
+    pub dkim_signature: Option<Sig>,
+    pub x_google_dkim_signature: Option<Sig>,
 }
 
 impl Email {
+    pub fn print(&self, json: bool) -> Result<()> {
+        if json {
+            let json = serde_json::to_string(self)?;
+            println!("{json}");
+        } else {
+            println!("{:#?}", self);
+        }
+        Ok(())
+    }
+
     pub fn has_dkim(&self) -> bool {
         self.dkim().is_some()
     }
@@ -24,6 +36,7 @@ impl Email {
         self.dkim_signature
             .as_ref()
             .or(self.x_google_dkim_signature.as_ref())
+            .map(|sig| &sig.value)
     }
 
     pub fn set_text_header(target: &mut Option<String>, header: &Header) {
@@ -83,7 +96,7 @@ impl Reader {
 }
 
 impl Iterator for Reader {
-    type Item = Result<Email>;
+    type Item = Result<(Email, Vec<u8>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         for msg in &mut self.reader {
@@ -92,7 +105,9 @@ impl Iterator for Reader {
                 Err(err) => return Some(Err(err.into())),
             };
 
-            let Some(msg) = MessageParser::new().parse_headers(msg.contents()) else {
+            let bytes = msg.contents();
+
+            let Some(msg) = MessageParser::new().parse_headers(bytes) else {
                 continue;
             };
 
@@ -125,9 +140,79 @@ impl Iterator for Reader {
                 }
             }
 
-            return Some(Ok(email));
+            return Some(Ok((email, bytes.to_vec())));
         }
 
         None
+    }
+}
+
+pub fn split_headers(bytes: &[u8]) -> Option<(&[u8], &[u8])> {
+    let mut scanned = 0usize;
+    let mut pending = bytes;
+
+    'outer: while let Some(idx) = memchr::memchr2(b'\r', b'\n', pending) {
+        scanned = scanned.saturating_add(idx);
+
+        let (_before, after) = bytes.split_at(scanned);
+        pending = after;
+
+        for delimiter in ["\r\n".as_bytes(), "\n".as_bytes()] {
+            if let Some(after) = after.strip_prefix(delimiter) {
+                if let Some(body) = after.strip_prefix(delimiter) {
+                    return Some((bytes[..scanned].as_ref(), body));
+                } else {
+                    scanned = scanned.saturating_add(delimiter.len());
+                    continue 'outer;
+                }
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_split_headers_crlf_crlf() {
+        let input = b"Header: value\r\nHeader2: value2\r\n\r\nBody";
+        let result = split_headers(input);
+        assert!(result.is_some());
+        let (headers, body) = result.unwrap();
+        assert_eq!(headers, b"Header: value\r\nHeader2: value2");
+        assert_eq!(body, b"Body");
+    }
+
+    #[test]
+    fn test_split_headers_lf_lf() {
+        let input = b"Header: value\nHeader2: value2\n\nBody";
+        let result = split_headers(input);
+        assert!(result.is_some());
+        let (headers, body) = result.unwrap();
+        assert_eq!(headers, b"Header: value\nHeader2: value2");
+        assert_eq!(body, b"Body");
+    }
+
+    #[test]
+    fn test_split_headers_crlf_crlf_body() {
+        let input = b"Header: value\r\nHeader2: value2\r\n\r\nabc\ndef\r\n\r\nfoo\r\nbar\r\n";
+        let result = split_headers(input);
+        assert!(result.is_some());
+        let (headers, body) = result.unwrap();
+        assert_eq!(headers, b"Header: value\r\nHeader2: value2");
+        assert_eq!(body, b"abc\ndef\r\n\r\nfoo\r\nbar\r\n");
+    }
+
+    #[test]
+    fn test_split_headers_lf_lf_body() {
+        let input = b"Header: value\nHeader2: value2\n\nabc\ndef\n\nfoo\nbar\n";
+        let result = split_headers(input);
+        assert!(result.is_some());
+        let (headers, body) = result.unwrap();
+        assert_eq!(headers, b"Header: value\nHeader2: value2");
+        assert_eq!(body, b"abc\ndef\n\nfoo\nbar\n");
     }
 }

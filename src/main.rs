@@ -1,4 +1,5 @@
 pub mod args;
+pub mod dkim;
 pub mod dns;
 pub mod errors;
 pub mod mbox;
@@ -7,6 +8,7 @@ use crate::args::{Args, Subcommand};
 use crate::dns::DkimDnsResolver;
 use crate::errors::*;
 use clap::Parser;
+use colored::Colorize;
 use std::collections::BTreeSet;
 use std::fs::{self, File};
 use std::io::Write;
@@ -20,13 +22,13 @@ async fn main() -> Result<()> {
             let file = File::open(&ls.file)?;
             let mut reader = mbox::Reader::new(file);
 
-            while let Some(email) = reader.next().transpose()? {
+            while let Some((email, _buf)) = reader.next().transpose()? {
                 if ls.dkim_only && email.dkim().is_none() {
                     continue;
                 }
 
                 if ls.inspect() {
-                    println!("{:#?}", email);
+                    email.print(args.json)?;
                 } else {
                     if ls.from {
                         println!("From: {:?}", email.from);
@@ -53,7 +55,45 @@ async fn main() -> Result<()> {
                     }
                 }
 
-                println!("---");
+                if !args.json {
+                    println!("---");
+                }
+            }
+        }
+        Subcommand::Verify(verify) => {
+            let file = File::open(&verify.file)?;
+            let mut reader = mbox::Reader::new(file);
+
+            let verifier = dkim::Verifier::new("dkim/")?;
+
+            while let Some((email, mut buf)) = reader.next().transpose()? {
+                let Some(dkim) = email.dkim() else {
+                    continue;
+                };
+
+                email.print(args.json)?;
+
+                // Normalize the final line ending, everything else should already be \r\n
+                if let Some(_stripped) = buf.strip_suffix(b"\r\n\n") {
+                    buf.truncate(buf.len().saturating_sub(1));
+                    buf.extend_from_slice(b"\r\n");
+                }
+
+                // Split the email headers off and parse them
+                let (headers, body) =
+                    mbox::split_headers(&buf).context("Failed to split email headers from body")?;
+
+                let headers = str::from_utf8(headers)?;
+                let headers = headers.parse()?;
+
+                println!(
+                    "{}",
+                    match verifier.verify(dkim, &headers, body).await {
+                        Some(true) => "DKIM PASS".green(),
+                        Some(false) => "DKIM FAIL".red(),
+                        None => "DKIM MISSING PUBLIC KEY".yellow(),
+                    }
+                );
             }
         }
         Subcommand::FetchDkim { file } => {
@@ -64,14 +104,14 @@ async fn main() -> Result<()> {
 
             let mut missing_dkim = BTreeSet::new();
 
-            while let Some(email) = reader.next().transpose()? {
+            while let Some((email, _buf)) = reader.next().transpose()? {
                 if let Some(dkim) = email.dkim() {
                     // println!("{:#?}", email);
-                    let dns = format!("{}._domainkey.{}", dkim.selector, dkim.domain);
-                    if dns.contains('/') {
+
+                    let Some(dns) = dkim::dns_name(dkim) else {
                         continue;
-                    }
-                    let dns = dns.to_ascii_lowercase();
+                    };
+
                     let path = format!("dkim/{dns}");
 
                     if fs::metadata(&path).is_ok() {
