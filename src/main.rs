@@ -19,81 +19,87 @@ async fn main() -> Result<()> {
 
     match args.subcommand {
         Subcommand::Ls(ls) => {
-            let file = File::open(&ls.file)?;
-            let mut reader = mbox::Reader::new(file);
+            for file in &ls.files {
+                let file =
+                    File::open(&file).with_context(|| anyhow!("Failed to open file: {file:?}"))?;
+                let mut reader = mbox::Reader::new(file);
 
-            while let Some((email, _buf)) = reader.next().transpose()? {
-                if ls.dkim_only && email.dkim().is_none() {
-                    continue;
-                }
-
-                if ls.inspect() {
-                    email.print(args.json)?;
-                } else {
-                    if ls.from {
-                        println!("From: {:?}", email.from);
+                while let Some((email, _buf)) = reader.next().transpose()? {
+                    if ls.dkim_only && email.dkim().is_none() {
+                        continue;
                     }
 
-                    if ls.to {
-                        println!("To: {:?}", email.to);
+                    if ls.inspect() {
+                        email.print(args.json)?;
+                    } else {
+                        if ls.from {
+                            println!("From: {:?}", email.from);
+                        }
+
+                        if ls.to {
+                            println!("To: {:?}", email.to);
+                        }
+
+                        if ls.id {
+                            println!("Message-ID: {:?}", email.message_ids);
+                        }
+
+                        if ls.subject
+                            && let Some(subject) = &email.subject
+                        {
+                            println!("Subject: {:?}", subject);
+                        }
+
+                        if ls.dkim
+                            && let Some(dkim) = email.dkim()
+                        {
+                            println!("DKIM: {:?}", dkim);
+                        }
                     }
 
-                    if ls.id {
-                        println!("Message-ID: {:?}", email.message_ids);
+                    if !args.json {
+                        println!("---");
                     }
-
-                    if ls.subject
-                        && let Some(subject) = &email.subject
-                    {
-                        println!("Subject: {:?}", subject);
-                    }
-
-                    if ls.dkim
-                        && let Some(dkim) = email.dkim()
-                    {
-                        println!("DKIM: {:?}", dkim);
-                    }
-                }
-
-                if !args.json {
-                    println!("---");
                 }
             }
         }
         Subcommand::Verify(verify) => {
-            let file = File::open(&verify.file)?;
-            let mut reader = mbox::Reader::new(file);
+            for file in &verify.files {
+                let file =
+                    File::open(&file).with_context(|| anyhow!("Failed to open file: {file:?}"))?;
+                let mut reader = mbox::Reader::new(file);
 
-            let verifier = dkim::Verifier::new("dkim/")?;
+                let verifier = dkim::Verifier::new("dkim/")?;
 
-            while let Some((email, mut buf)) = reader.next().transpose()? {
-                let Some(dkim) = email.dkim() else {
-                    continue;
-                };
+                while let Some((email, mut buf)) = reader.next().transpose()? {
+                    let Some(dkim) = email.dkim() else {
+                        continue;
+                    };
 
-                email.print(args.json)?;
+                    email.print(args.json)?;
 
-                // Normalize the final line ending, everything else should already be \r\n
-                if let Some(_stripped) = buf.strip_suffix(b"\r\n\n") {
-                    buf.truncate(buf.len().saturating_sub(1));
-                    buf.extend_from_slice(b"\r\n");
-                }
-
-                // Split the email headers off and parse them
-                let (headers, body) =
-                    mbox::split_headers(&buf).context("Failed to split email headers from body")?;
-
-                let headers = str::from_utf8(headers)?;
-                let headers = headers.parse()?;
-
-                println!(
-                    "{}",
-                    match verifier.verify(dkim, &headers, body).await {
-                        Some(true) => "DKIM PASS".green(),
-                        Some(false) => "DKIM FAIL".red(),
-                        None => "DKIM MISSING PUBLIC KEY".yellow(),
+                    // Normalize the final line ending, everything else should already be \r\n
+                    if let Some(_stripped) = buf.strip_suffix(b"\r\n\n") {
+                        buf.truncate(buf.len().saturating_sub(1));
+                        buf.extend_from_slice(b"\r\n");
                     }
-                );
+
+                    // Split the email headers off and parse them
+                    let (headers, body) = mbox::split_headers(&buf)
+                        .context("Failed to split email headers from body")?;
+
+                    let headers = str::from_utf8(headers)?;
+                    let headers = headers.parse()?;
+
+                    println!(
+                        "{}",
+                        match verifier.verify(dkim, &headers, body).await {
+                            Some(true) => "DKIM PASS".green(),
+                            Some(false) => "DKIM FAIL".red(),
+                            None => "DKIM MISSING PUBLIC KEY".yellow(),
+                        }
+                    );
+                }
             }
         }
         Subcommand::FetchDkim { files } => {
@@ -102,8 +108,9 @@ async fn main() -> Result<()> {
 
             fs::create_dir_all("dkim")?;
 
-            for file in files {
-                let file = File::open(&file)?;
+            for file in &files {
+                let file =
+                    File::open(&file).with_context(|| anyhow!("Failed to open file: {file:?}"))?;
                 let mut reader = mbox::Reader::new(file);
 
                 while let Some((email, _buf)) = reader.next().transpose()? {

@@ -20,7 +20,7 @@ pub enum Subcommand {
 
 #[derive(Debug, Clone, clap::Parser)]
 pub struct Ls {
-    pub file: PathBuf,
+    pub files: Vec<PathBuf>,
     #[arg(short = 'D', long)]
     pub dkim_only: bool,
     #[arg(short, long)]
@@ -43,5 +43,5 @@ impl Ls {
 
 #[derive(Debug, Clone, clap::Parser)]
 pub struct Verify {
-    pub file: PathBuf,
+    pub files: Vec<PathBuf>,
 }
