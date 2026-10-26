@@ -14,6 +14,9 @@ spoofing and phishing attacks.
 As a byproduct, this produces a cryptographic papertrail allowing independent
 verification of the leaked email's authenticity.
 
+The signatures do not prove the email was sent by a specific person, but they
+are a strong indicator the emails were sent through the respective email server.
+
 The `verify` command in this toolkit reports 3 possible results per email:
 
 - **DKIM PASS**: The email's DKIM signature has been successfully verified,
@@ -32,9 +35,19 @@ Possible reasons for **DKIM FAIL** include:
 - Due to a bug in my verification code (most likely)
 - The public key in DNS has been modified since, and we don't have the old
 public key archived (yet)
-- The email has been tampered with
+- The email has been modified after signing
 - The email server was misconfigured and genuinely produced a bogus DKIM
 signature
+
+## About trusting the DKIM public key archive
+
+The keys in `dkim/` are collected in good faith on best-effort basis from
+sources like live DNS data and community contributions. The archive may include
+keys that are no longer published in DNS, including keys whose removal may be
+relevant for forensical analysis of historical email records.
+
+The archive is intended as a useful reference, but independent verification
+against authoritative DNS data and other email archive records is recommended.
 
 ## Usage
 
