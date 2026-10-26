@@ -42,6 +42,8 @@ impl DkimDnsResolver {
             }
         }
 
+        records.sort();
+
         Ok(records)
     }
 }
