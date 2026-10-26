@@ -62,6 +62,12 @@ cp ./target/release/afd-leak-verification-toolkit .
 ./afd-leak-verification-toolkit --help
 ```
 
+Alternatively, pull the code from seeders in the radicle network:
+
+```
+rad clone rad:z2whGjakKzs4D3wex4J4Mw24CVvCL 2026-afd-leak-verification-toolkit
+```
+
 ### List mbox contents
 
 For a quick sanity check, use this command to scan through an mbox file (processing about 1gb/sec):
