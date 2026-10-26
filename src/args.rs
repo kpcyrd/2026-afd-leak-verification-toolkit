@@ -15,7 +15,7 @@ pub enum Subcommand {
     /// Verify DKIM signatures
     Verify(Verify),
     /// Populate local DKIM public key cache
-    FetchDkim { file: PathBuf },
+    FetchDkim { files: Vec<PathBuf> },
 }
 
 #[derive(Debug, Clone, clap::Parser)]

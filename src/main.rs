@@ -96,52 +96,59 @@ async fn main() -> Result<()> {
                 );
             }
         }
-        Subcommand::FetchDkim { file } => {
+        Subcommand::FetchDkim { files } => {
             let resolver = DkimDnsResolver::new()?;
-
-            let file = File::open(&file)?;
-            let mut reader = mbox::Reader::new(file);
-
             let mut missing_dkim = BTreeSet::new();
 
-            while let Some((email, _buf)) = reader.next().transpose()? {
-                if let Some(dkim) = email.dkim() {
-                    // println!("{:#?}", email);
+            fs::create_dir_all("dkim")?;
 
-                    let Some(dns) = dkim::dns_name(dkim) else {
-                        continue;
-                    };
+            for file in files {
+                let file = File::open(&file)?;
+                let mut reader = mbox::Reader::new(file);
 
-                    let path = format!("dkim/{dns}");
+                while let Some((email, _buf)) = reader.next().transpose()? {
+                    if let Some(dkim) = email.dkim() {
+                        // println!("{:#?}", email);
 
-                    if fs::metadata(&path).is_ok() {
-                        continue;
-                    }
+                        let Some(dns) = dkim::dns_name(dkim) else {
+                            continue;
+                        };
 
-                    println!("{dns}");
+                        let path = format!("dkim/{dns}");
 
-                    match resolver.resolve(&dns).await {
-                        Ok(records) => {
-                            if !records.is_empty() {
-                                let mut file =
-                                    File::options().append(true).create(true).open(path)?;
-                                for record in &records {
-                                    file.write_all(record.as_bytes())?;
-                                    file.write_all(b"\n")?;
+                        if fs::metadata(&path).is_ok() {
+                            continue;
+                        }
+
+                        if missing_dkim.contains(&dns) {
+                            continue;
+                        }
+
+                        println!("{dns}");
+
+                        match resolver.resolve(&dns).await {
+                            Ok(records) => {
+                                if !records.is_empty() {
+                                    let mut file =
+                                        File::options().append(true).create(true).open(path)?;
+                                    for record in &records {
+                                        file.write_all(record.as_bytes())?;
+                                        file.write_all(b"\n")?;
+                                    }
+                                } else {
+                                    missing_dkim.insert(dns);
                                 }
-                            } else {
+
+                                println!("records: {records:?}");
+                            }
+                            Err(err) => {
+                                eprintln!("Failed to resolve {:?}: {}", dns, err);
                                 missing_dkim.insert(dns);
                             }
+                        }
 
-                            println!("records: {records:?}");
-                        }
-                        Err(err) => {
-                            eprintln!("Failed to resolve {:?}: {}", dns, err);
-                            missing_dkim.insert(dns);
-                        }
+                        println!("---");
                     }
-
-                    println!("---");
                 }
             }
 
