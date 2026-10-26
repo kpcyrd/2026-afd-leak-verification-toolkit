@@ -95,6 +95,14 @@ The verification step works offline, using a local DKIM public key archive
 ./afd-leak-verification-toolkit fetch-dkim emails.mbox
 ```
 
+To rebuild the archive from scratch, you can remove the existing `./dkim/`
+directory and then run the `fetch-dkim` command again:
+
+```bash
+rm -r ./dkim/
+./afd-leak-verification-toolkit fetch-dkim ./*/*.mbox
+```
+
 At the time of writing, if a file exists in the `./dkim/` directory, the
 `fetch-dkim` command will not re-fetch it from DNS, even though it may have
 changed.
