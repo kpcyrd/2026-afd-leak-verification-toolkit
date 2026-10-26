@@ -66,15 +66,12 @@ impl Email {
 
         let iter = addresses
             .iter()
-            .flat_map(|addr| match addr {
-                Address::Mailbox(mailbox) => Some(mailbox),
-                Address::Group(group) => {
-                    if group.mailboxes().peekable().peek().is_none() {
-                        None
-                    } else {
-                        panic!("TODO: support group addresses: {:?}", group)
-                    }
-                }
+            .flat_map(|addr| {
+                let (single, group) = match addr {
+                    Address::Mailbox(mailbox) => (Some(mailbox), None),
+                    Address::Group(group) => (None, Some(group.mailboxes())),
+                };
+                single.into_iter().chain(group.into_iter().flatten())
             })
             .flat_map(|mailbox| mailbox.address())
             .map(String::from);
